@@ -14,12 +14,6 @@ import type {
   InterviewQuestion,
   AnalysisResult,
 } from "../types";
-import {
-  generateFollowUpQuestions as mockFollowUp,
-  generateDeeperFollowUpQuestions as mockDeeper,
-  generateThreadSummary as mockSummary,
-  runFullAnalysis as mockAnalysis,
-} from "./mockAi";
 
 // ── Client setup ──
 
@@ -31,8 +25,8 @@ function createClient(): OpenAI {
   return new OpenAI({
     apiKey,
     dangerouslyAllowBrowser: true,
-    timeout: 12000, // 12s max — don't hang forever
-    maxRetries: 0,  // fail fast, fall back to mock
+    timeout: 12000,
+    maxRetries: 0,
   });
 }
 
@@ -64,7 +58,7 @@ function parseJSON<T>(raw: string): T | null {
   }
 }
 
-// ── Prompt builders (minimal — faster LLM response) ──
+// ── Prompt builders ──
 
 const FOLLOWUP_SYSTEM = `당신은 사용자의 자기성찰을 돕는 인터뷰어입니다.
 답변 속 구체적 경험, 감정, 선택 기준, 가치관, 커리어 방향성을 드러내는 심층 질문 2~4개를 생성하세요.
@@ -135,173 +129,152 @@ const ANALYSIS_FORMAT = `{
 let questionIdCounter = 0;
 
 /**
- * Generate follow-up questions — OpenAI with mock fallback.
+ * Generate follow-up questions — pure OpenAI.
  */
 export async function generateFollowUpQuestions(
   answer: string,
   threadHistory: InterviewAnswer[] = [],
 ): Promise<InterviewQuestion[]> {
-  try {
-    const client = createClient();
-    const threadSummary =
-      threadHistory.length > 0
-        ? threadHistory.map((a) => `A: ${a.answerText}`).join("\n")
-        : "첫 답변";
+  const client = createClient();
+  const threadSummary =
+    threadHistory.length > 0
+      ? threadHistory.map((a) => `A: ${a.answerText}`).join("\n")
+      : "첫 답변";
 
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: FOLLOWUP_SYSTEM },
-        { role: "user", content: `답변: ${answer}\n\n맥락: ${threadSummary}` },
-      ],
-      temperature: 0.6,
-      max_tokens: 800,
-    });
+  const completion = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      { role: "system", content: FOLLOWUP_SYSTEM },
+      { role: "user", content: `답변: ${answer}\n\n맥락: ${threadSummary}` },
+    ],
+    temperature: 0.6,
+    max_tokens: 800,
+  });
 
-    const raw = completion.choices[0]?.message?.content || "[]";
-    const parsed = parseJSON<{ question: string; intent: string; reason: string }[]>(raw);
+  const raw = completion.choices[0]?.message?.content || "[]";
+  const parsed = parseJSON<{ question: string; intent: string; reason: string }[]>(raw);
 
-    if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.slice(0, 4).map((item, i) => ({
-        id: `fq_${Date.now()}_${++questionIdCounter}`,
-        coreQuestionId: "",
-        type: "followup" as const,
-        depth: 1,
-        title: item.question,
-        intent: item.intent as any,
-        reason: item.reason,
-      }));
-    }
-  } catch (err: any) {
-    console.warn("OpenAI follow-up failed, using mock:", err.message);
+  if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+    return parsed.slice(0, 4).map((item, i) => ({
+      id: `fq_${Date.now()}_${++questionIdCounter}`,
+      coreQuestionId: "",
+      type: "followup" as const,
+      depth: 1,
+      title: item.question,
+      intent: item.intent as any,
+      reason: item.reason,
+    }));
   }
-
-  // Fallback to mock
-  return mockFollowUp(answer, threadHistory);
+  throw new Error("OpenAI 응답에서 유효한 질문을 추출할 수 없습니다");
 }
 
 /**
- * Generate deeper follow-up questions — OpenAI with mock fallback.
+ * Generate deeper follow-up questions — pure OpenAI.
  */
 export async function generateDeeperFollowUpQuestions(
   currentQuestion: string,
   answer: string,
   depth: number,
 ): Promise<InterviewQuestion[]> {
-  try {
-    const client = createClient();
+  const client = createClient();
 
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: DEEPER_SYSTEM },
-        { role: "user", content: `depth ${depth}\n질문: ${currentQuestion}\n답변: ${answer}` },
-      ],
-      temperature: 0.6,
-      max_tokens: 600,
-    });
+  const completion = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      { role: "system", content: DEEPER_SYSTEM },
+      { role: "user", content: `depth ${depth}\n질문: ${currentQuestion}\n답변: ${answer}` },
+    ],
+    temperature: 0.6,
+    max_tokens: 600,
+  });
 
-    const raw = completion.choices[0]?.message?.content || "[]";
-    const parsed = parseJSON<{ question: string; intent: string; reason: string }[]>(raw);
+  const raw = completion.choices[0]?.message?.content || "[]";
+  const parsed = parseJSON<{ question: string; intent: string; reason: string }[]>(raw);
 
-    if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.map((item, i) => ({
-        id: `fq_${Date.now()}_${++questionIdCounter}`,
-        coreQuestionId: "",
-        type: "followup" as const,
-        depth: depth + 1,
-        title: item.question,
-        intent: item.intent as any,
-        reason: item.reason,
-      }));
-    }
-  } catch (err: any) {
-    console.warn("OpenAI deep follow-up failed, using mock:", err.message);
+  if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+    return parsed.map((item, i) => ({
+      id: `fq_${Date.now()}_${++questionIdCounter}`,
+      coreQuestionId: "",
+      type: "followup" as const,
+      depth: depth + 1,
+      title: item.question,
+      intent: item.intent as any,
+      reason: item.reason,
+    }));
   }
-
-  return mockDeeper(currentQuestion, answer, depth);
+  throw new Error("OpenAI 응답에서 유효한 심층 질문을 추출할 수 없습니다");
 }
 
 /**
- * Generate thread summary — OpenAI with mock fallback.
+ * Generate thread summary — pure OpenAI.
  */
 export async function generateThreadSummary(
   coreQuestion: string,
   answers: InterviewAnswer[],
 ): Promise<string> {
-  try {
-    const client = createClient();
-    const answerTexts = answers.map((a, i) => `[${i + 1}] ${a.answerText}`).join("\n");
+  const client = createClient();
+  const answerTexts = answers.map((a, i) => `[${i + 1}] ${a.answerText}`).join("\n");
 
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SUMMARY_SYSTEM },
-        { role: "user", content: `질문: "${coreQuestion}"\n\n${answerTexts}` },
-      ],
-      temperature: 0.3,
-      max_tokens: 200,
-    });
+  const completion = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      { role: "system", content: SUMMARY_SYSTEM },
+      { role: "user", content: `질문: "${coreQuestion}"\n\n${answerTexts}` },
+    ],
+    temperature: 0.3,
+    max_tokens: 200,
+  });
 
-    const text = completion.choices[0]?.message?.content?.trim();
-    if (text) return text;
-  } catch (err: any) {
-    console.warn("OpenAI summary failed, using mock:", err.message);
-  }
-
-  return mockSummary(coreQuestion, answers);
+  const text = completion.choices[0]?.message?.content?.trim();
+  if (text) return text;
+  throw new Error("OpenAI 응답이 비어 있습니다");
 }
 
 /**
- * Run full analysis — OpenAI with mock fallback.
+ * Run full analysis — pure OpenAI.
  */
 export async function runFullAnalysis(
   allAnswers: InterviewAnswer[],
   threadSummaries: { coreQuestionId: string; summary: string }[],
 ): Promise<AnalysisResult> {
-  try {
-    const client = createClient();
+  const client = createClient();
 
-    const structured = allAnswers
-      .map((a) => `[${a.coreQuestionId}] depth=${a.depth}\n${a.answerText}`)
-      .join("\n---\n");
+  const structured = allAnswers
+    .map((a) => `[${a.coreQuestionId}] depth=${a.depth}\n${a.answerText}`)
+    .join("\n---\n");
 
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: `${ANALYSIS_SYSTEM}\n\n${ANALYSIS_FORMAT}` },
-        { role: "user", content: structured || "(답변 없음)" },
-      ],
-      temperature: 0.4,
-      max_tokens: 3000,
-    });
+  const completion = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      { role: "system", content: `${ANALYSIS_SYSTEM}\n\n${ANALYSIS_FORMAT}` },
+      { role: "user", content: structured || "(답변 없음)" },
+    ],
+    temperature: 0.4,
+    max_tokens: 3000,
+  });
 
-    const raw = completion.choices[0]?.message?.content || "{}";
-    const result = parseJSON<AnalysisResult>(raw);
+  const raw = completion.choices[0]?.message?.content || "{}";
+  const result = parseJSON<AnalysisResult>(raw);
 
-    if (result && result.oneLineIdentity) {
-      const nodes = (result.graph?.nodes || []).map((n, i) => ({
-        ...n,
-        id: n.id || `node_${i}`,
-      }));
-      const edges = (result.graph?.edges || []).map((e, i) => ({
-        ...e,
-        id: e.id || `edge_${i}`,
-      }));
+  if (result && result.oneLineIdentity) {
+    const nodes = (result.graph?.nodes || []).map((n, i) => ({
+      ...n,
+      id: n.id || `node_${i}`,
+    }));
+    const edges = (result.graph?.edges || []).map((e, i) => ({
+      ...e,
+      id: e.id || `edge_${i}`,
+    }));
 
-      return {
-        oneLineIdentity: result.oneLineIdentity,
-        summary: result.summary || "",
-        coreValues: result.coreValues || [],
-        strengths: result.strengths || [],
-        careerDirection: result.careerDirection || { summary: "", keywords: [], evidence: [] },
-        riskPatterns: result.riskPatterns || [],
-        graph: { nodes, edges },
-      };
-    }
-  } catch (err: any) {
-    console.warn("OpenAI analysis failed, using mock:", err.message);
+    return {
+      oneLineIdentity: result.oneLineIdentity,
+      summary: result.summary || "",
+      coreValues: result.coreValues || [],
+      strengths: result.strengths || [],
+      careerDirection: result.careerDirection || { summary: "", keywords: [], evidence: [] },
+      riskPatterns: result.riskPatterns || [],
+      graph: { nodes, edges },
+    };
   }
-
-  return mockAnalysis(allAnswers, threadSummaries);
+  throw new Error("OpenAI 응답에서 유효한 분석 결과를 추출할 수 없습니다");
 }
