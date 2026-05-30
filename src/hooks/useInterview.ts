@@ -146,7 +146,7 @@ export function useInterview() {
       const answer: InterviewAnswer = {
         id: `a_${++answerCounter}`,
         questionId: question.id,
-        coreQuestionId: s.currentCore!.id,
+        coreQuestionId: ALL_CORE_QUESTIONS[s.currentCoreIndex].id,
         parentAnswerId: s.currentAnswerId || undefined,
         depth: question.depth,
         answerText: text.trim(),
