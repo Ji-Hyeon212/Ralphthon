@@ -219,26 +219,18 @@ export function useInterview() {
 
   /**
    * Close current thread and move to the next core question.
+   *
+   * Summary is generated lazily during final analysis to avoid
+   * blocking the user between questions.
    */
   const closeThread = useCallback(async () => {
     const s = sessionRef.current;
-
-    // Generate summary
-    const thread = s.threads[s.currentCoreIndex];
-    const coreQuestion = ALL_CORE_QUESTIONS[s.currentCoreIndex];
-    setLoading(true);
-    const summary = await generateThreadSummary(
-      coreQuestion.title,
-      thread.answers
-    );
-    setLoading(false);
 
     updateState((prev) => {
       const threads = [...prev.threads];
       threads[prev.currentCoreIndex] = {
         ...threads[prev.currentCoreIndex],
         status: "closed",
-        summary,
       };
 
       const nextIndex = prev.currentCoreIndex + 1;
@@ -301,13 +293,41 @@ export function useInterview() {
     const s = sessionRef.current;
     setLoading(true);
 
+    const summaryPromises = s.threads
+      .filter((t) => t.answers.length > 0 && !t.summary)
+      .map(async (t) => {
+        const cq = ALL_CORE_QUESTIONS.find((q) => q.id === t.coreQuestionId);
+        if (!cq) return null;
+        try {
+          const summary = await generateThreadSummary(cq.title, t.answers);
+          return { coreQuestionId: t.coreQuestionId, summary };
+        } catch {
+          return null;
+        }
+      });
+
+    const generated = await Promise.all(summaryPromises);
+
+    updateState((prev) => {
+      const threads = [...prev.threads];
+      for (const g of generated) {
+        if (!g) continue;
+        const idx = threads.findIndex((t) => t.coreQuestionId === g.coreQuestionId);
+        if (idx >= 0) threads[idx] = { ...threads[idx], summary: g.summary };
+      }
+      return { ...prev, threads };
+    });
+
     const allAnswers = s.threads.flatMap((t) => t.answers);
     const summaries = s.threads
-      .filter((t) => t.summary)
-      .map((t) => ({
-        coreQuestionId: t.coreQuestionId,
-        summary: t.summary!,
-      }));
+      .filter((t) => t.summary || generated.find((g) => g?.coreQuestionId === t.coreQuestionId))
+      .map((t) => {
+        const gen = generated.find((g) => g?.coreQuestionId === t.coreQuestionId);
+        return {
+          coreQuestionId: t.coreQuestionId,
+          summary: t.summary || gen?.summary || "",
+        };
+      });
 
     const result = await runFullAnalysis(allAnswers, summaries);
     setLoading(false);

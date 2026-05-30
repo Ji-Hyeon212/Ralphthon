@@ -28,25 +28,42 @@ export default function InterviewPage() {
   const handleCoreSubmit = useCallback(async () => {
     if (!inputValue.trim() || submitting) return;
     setSubmitting(true);
-    await saveCoreAnswer(inputValue);
-    setInputValue("");
-    setSubmitting(false);
+    try {
+      await saveCoreAnswer(inputValue);
+      setInputValue("");
+    } catch (e: any) {
+      console.error("답변 저장 실패:", e);
+      alert(`OpenAI 요청 실패: ${e.message}`);
+    } finally {
+      setSubmitting(false);
+    }
   }, [inputValue, submitting, saveCoreAnswer]);
 
   const handleFollowUpAnswer = useCallback(
     async (goDeeper: boolean) => {
       if (!inputValue.trim() || submitting) return;
       setSubmitting(true);
-      await saveFollowUpAnswer(inputValue, goDeeper);
-      setInputValue("");
-      setSubmitting(false);
+      try {
+        await saveFollowUpAnswer(inputValue, goDeeper);
+        setInputValue("");
+      } catch (e: any) {
+        console.error("후속 답변 저장 실패:", e);
+        alert(`OpenAI 요청 실패: ${e.message}`);
+      } finally {
+        setSubmitting(false);
+      }
     },
     [inputValue, submitting, saveFollowUpAnswer]
   );
 
   const handleAnalyze = useCallback(async () => {
-    await startAnalysis();
-    navigate("/analyzing");
+    try {
+      await startAnalysis();
+      navigate("/analyzing");
+    } catch (e: any) {
+      console.error("분석 실패:", e);
+      alert(`분석 실패: ${e.message}`);
+    }
   }, [startAnalysis, navigate]);
 
   const progressPercent =
