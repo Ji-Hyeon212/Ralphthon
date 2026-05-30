@@ -13,7 +13,7 @@ import {
   generateDeeperFollowUpQuestions,
   generateThreadSummary,
   runFullAnalysis,
-} from "../services/mockAi";
+} from "../services/aiService";
 
 let answerCounter = 0;
 let threadIdCounter = 0;
